@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.utils.tensorboard import SummaryWriter
 
 from typing import List, Union, Tuple, Optional
 from overrides import overrides
@@ -23,13 +26,15 @@ class Context2Vec(nn.Module):
             mlp_activate_func: str = "relu",
             num_negative_samples: int = 10,
             alpha: float = 0.75,
-            device: torch.device = None
+            device: torch.device = None,
+            summary_writer: SummaryWriter = None
     ):
         super(Context2Vec, self).__init__()
         self.vocab_size = len(word_freqs)
         self.context_emb_size = context_emb_size
         self.target_emb_size = target_emb_size
         self.num_negative_samples = num_negative_samples
+        self.writer = summary_writer
         if device is None:
             device = torch.device("cpu")
         self.device = device
@@ -86,13 +91,11 @@ class Context2Vec(nn.Module):
             input_size=self.context_emb_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            batch_first=True
         )
         right_context_lstm = nn.LSTM(
             input_size=self.context_emb_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
-            batch_first=True
         )
         return left_context_lstm, right_context_lstm
 
@@ -109,28 +112,41 @@ class Context2Vec(nn.Module):
         Returns:
             negative_embeddings: Embeddings corresponding to sampled negative target words.
         """
-        sample_ids = self.sampler(size=shape)
+        sample_ids = self.sampler(size=shape).to(self.device)
         negative_embeddings = self.target_embs(sample_ids)
         return negative_embeddings
 
-    @overrides
-    def forward(self, input_tensor: torch.Tensor, target_ids: Optional[List[int]] = None):
-        left_context_ids = input_tensor[:, :-1]
-        right_context_ids = input_tensor.flip(-1)[:, :-1]
+    def get_context_vector(self, input_tensor: torch.Tensor) -> torch.Tensor:
+        left_context_ids = input_tensor[:-1, :]
+        right_context_ids = input_tensor.flip(0)[:-1, :]
 
         left_context_embs = self.left_context_embs(left_context_ids)
         right_context_embs = self.right_context_embs(right_context_ids)
-        target_embs = self.target_embs(input_tensor[:, 1:-1])
 
         left_hidden_states, _ = self.left_context_lstm(left_context_embs)
-        left_hidden_states = left_hidden_states[:, :-1]
+        left_hidden_states = left_hidden_states[:-1, :]
 
         right_hidden_states, _ = self.right_context_lstm(right_context_embs)
-        right_hidden_states = right_hidden_states[:, :-1].flip(-1)
+        right_hidden_states = right_hidden_states[:-1, :].flip(0)
 
         bi_dir_hidden_state = torch.cat((left_hidden_states, right_hidden_states), dim=-1)
         context_tensor = self.mlp(bi_dir_hidden_state)
+        return context_tensor
 
+    def get_closest_words_to_context(self, context_ids: torch.Tensor, target_pos: int, k: int = 10):
+        context_ids = context_ids.t()
+        context_vector = self.get_context_vector(context_ids)[target_pos, 0, :]
+        logits = (self.target_embs.weight.data * context_vector).sum(-1)
+        probs = F.softmax(logits, dim=0)
+        top_vals, top_ids = probs.topk(k=k)
+        top_ids = top_ids.tolist()
+        top_vals = top_vals.tolist()
+        return top_ids, top_vals
+
+    @overrides
+    def forward(self, input_tensor: torch.Tensor):
+        target_embs = self.target_embs(input_tensor[1:-1, :])
+        context_tensor = self.get_context_vector(input_tensor)
         negative_shape = torch.Size((target_embs.size(0), target_embs.size(1), self.num_negative_samples))
         negative_samples = self.sample(shape=negative_shape)
         loss = self.loss(target_embs, negative_samples, context_tensor)

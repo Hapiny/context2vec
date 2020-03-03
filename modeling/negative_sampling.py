@@ -21,9 +21,9 @@ class NegativeSampling(nn.Module):
         """
         Method that computes Negative Sampling loss.
         Args:
-            negative_samples: Tensor with shape (batch_size, seq_len, num_negative, emb_size)
-            positive_sample: Tensor with shape (batch_size, seq_len, emb_size)
-            context_tensor:  Tensor with shape (batch_size, emb_size)
+            negative_samples: Tensor with shape (seq_len, batch_size, num_negative, emb_size)
+            positive_sample: Tensor with shape (seq_len, batch_size, emb_size)
+            context_tensor:  Tensor with shape (seq_len, batch_size, emb_size)
 
         Returns:
 
@@ -31,6 +31,6 @@ class NegativeSampling(nn.Module):
         positive_logits = (positive_sample * context_tensor).sum(dim=-1)
         positive_samples_loss = self.activate_func(positive_logits)
         logits = (-negative_samples * context_tensor.unsqueeze(2)).sum(-1)
-        negative_samples_loss = self.activate_func(logits).mean(-1)
-        loss = -(positive_samples_loss + negative_samples_loss).mean()
-        return loss
+        negative_samples_loss = self.activate_func(logits).sum(-1)
+        loss = -(positive_samples_loss + negative_samples_loss).sum(0)
+        return loss.mean()
