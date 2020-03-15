@@ -7,7 +7,7 @@ from torchtext import data
 from torchtext.vocab import Vocab
 from tqdm import tqdm
 
-DEFAULT_VOCAB_SIZE = 150 * 1000
+DEFAULT_VOCAB_SIZE = 150_000
 SPECIAL_TOKENS = [
     "<pad>",
     "<unk>",
@@ -20,7 +20,6 @@ class Dataset:
     def __init__(
             self,
             sentences: np.ndarray,
-            counter: Dict[str, int] = None,
             vocab: Vocab = None,
             batch_size: int = 64,
             min_freq: int = 3,
@@ -28,17 +27,12 @@ class Dataset:
             device: torch.device = None,
             is_train: bool = False
     ):
-        assert vocab is not None or counter is not None
         self.sent_dict = self.gather_by_lengths(sentences)
 
         self.pad_token = SPECIAL_TOKENS[0]
         self.unk_token = SPECIAL_TOKENS[1]
         self.bos_token = SPECIAL_TOKENS[2]
         self.eos_token = SPECIAL_TOKENS[3]
-        self.pad_token_id = 0
-        self.unk_token_id = 1
-        self.bos_token_id = 2
-        self.eos_token_id = 3
 
         self.batch_size = batch_size
         self.is_train = is_train
@@ -55,22 +49,31 @@ class Dataset:
         self.sentence_id_field = data.Field(use_vocab=False)
 
         # Create vocabulary or use given vocab
-        if counter is not None:
-            for special in SPECIAL_TOKENS:
-                counter[special] = 0
-            self.sentence_field.vocab = Vocab(
-                counter=counter,
+        if vocab is None:
+            self.sentence_field.build_vocab(
+                sentences,
                 max_size=vocab_size,
                 min_freq=min_freq,
-                specials=SPECIAL_TOKENS,
-                specials_first=True
+                specials=SPECIAL_TOKENS
             )
         else:
             self.sentence_field.vocab = vocab
 
         self.vocab = self.sentence_field.vocab
-        self.freqs = {word: self.vocab.freqs[word] for word, idx in self.vocab.stoi.items()}
+        self.freqs = np.array(
+            [
+                self.vocab.freqs[word]
+                if word in self.vocab.freqs and word not in SPECIAL_TOKENS
+                else 0
+                for word in self.vocab.itos
+            ]
+        )
+
         self.dataset = self.create_dataset(self.sent_dict, sentences)
+        self.pad_token_id = self.vocab.stoi[self.pad_token]
+        self.unk_token_id = self.vocab.stoi[self.unk_token]
+        self.bos_token_id = self.vocab.stoi[self.bos_token]
+        self.eos_token_id = self.vocab.stoi[self.eos_token]
 
     def convert_ids_to_tokens(self, ids: List[List[int]]):
         return [
@@ -95,6 +98,8 @@ class Dataset:
 
         sent_dict = defaultdict(list)
         for index, length in lengths:
+            if length > 64:
+                continue
             sent_dict[length].append(index)
 
         return sent_dict
@@ -120,15 +125,13 @@ class Dataset:
         if batch_size is None:
             batch_size = self.batch_size
 
-        def sort(item: data.Dataset) -> int:
-            return len(getattr(item, "sentence"))
-
         for dataset in tqdm(self.dataset):
-            yield data.Iterator(
+            dataset_iterator = data.Iterator(
                 dataset=dataset,
                 batch_size=batch_size,
-                sort_key=sort,
                 train=self.is_train,
                 repeat=False,
-                device=self.device
+                device=self.device,
             )
+            for batch in dataset_iterator:
+                yield batch

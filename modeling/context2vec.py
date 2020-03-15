@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.utils.tensorboard import SummaryWriter
 
-from typing import List, Union, Tuple, Optional
+from typing import List, Union, Tuple
 from overrides import overrides
 
 from modeling.utils import Sampler
@@ -16,20 +15,21 @@ class Context2Vec(nn.Module):
     def __init__(
             self,
             word_freqs: List[int],
-            context_emb_size: int = 512,
-            target_emb_size: int = 512,
-            lstm_size: int = 256,
+            pad_token_id: int,
+            context_emb_size: int = 300,
+            target_emb_size: int = 600,
+            lstm_size: int = 600,
             lstm_num_layers: int = 1,
-            mlp_hidden_size: int = 256,
-            mlp_num_layers: Union[List[int], int] = 2,
+            mlp_size: Union[List[int], int] = 1200,
+            mlp_num_layers: int = 2,
             mlp_dropout: float = 0.0,
-            mlp_activate_func: str = "relu",
             num_negative_samples: int = 10,
             alpha: float = 0.75,
             device: torch.device = None,
             summary_writer: SummaryWriter = None
     ):
         super(Context2Vec, self).__init__()
+        self.pad_token_id = pad_token_id
         self.vocab_size = len(word_freqs)
         self.context_emb_size = context_emb_size
         self.target_emb_size = target_emb_size
@@ -43,7 +43,7 @@ class Context2Vec(nn.Module):
         self.target_embs = nn.Embedding(
             num_embeddings=self.vocab_size,
             embedding_dim=self.target_emb_size,
-            padding_idx=0,
+            padding_idx=self.pad_token_id,
         )
 
         # Create embedding matrices for Left and Right context words
@@ -57,11 +57,10 @@ class Context2Vec(nn.Module):
         # Create Multi-Layer Perceptron for obtaining context vector
         self.mlp = MLP(
             input_size=2 * lstm_size,
-            hidden_size=mlp_hidden_size,
+            hidden_size=mlp_size,
             output_size=target_emb_size,
             num_layers=mlp_num_layers,
             dropout_rate=mlp_dropout,
-            activate_func=mlp_activate_func
         )
 
         self.sampler = Sampler(word_freqs=word_freqs, alpha=alpha)
@@ -69,20 +68,24 @@ class Context2Vec(nn.Module):
         # Create Negative Sampling Loss function
         self.loss = NegativeSampling()
 
+        # Initialize context embeddings
+        std = (1. / self.context_emb_size) ** 0.5
+        self.left_context_embs.weight.data.normal_(0, std)
+        self.right_context_embs.weight.data.normal_(0, std)
+
         # Move modeling to given device
         self.to(device=device)
 
-    @staticmethod
-    def create_context_embeddings(vocab_size: int, emb_size: int = 512) -> Tuple[nn.Module, nn.Module]:
+    def create_context_embeddings(self, vocab_size: int, emb_size: int = 512) -> Tuple[nn.Module, nn.Module]:
         left_context_embs = nn.Embedding(
             num_embeddings=vocab_size,
             embedding_dim=emb_size,
-            padding_idx=0,
+            padding_idx=self.pad_token_id,
         )
         right_context_embs = nn.Embedding(
             num_embeddings=vocab_size,
             embedding_dim=emb_size,
-            padding_idx=0,
+            padding_idx=self.pad_token_id,
         )
         return left_context_embs, right_context_embs
 
