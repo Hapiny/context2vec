@@ -72,6 +72,7 @@ class Context2Vec(nn.Module):
         std = (1. / self.context_emb_size) ** 0.5
         self.left_context_embs.weight.data.normal_(0, std)
         self.right_context_embs.weight.data.normal_(0, std)
+        self.target_embs.weight.data.zero_()
 
         # Move modeling to given device
         self.to(device=device)
@@ -94,11 +95,13 @@ class Context2Vec(nn.Module):
             input_size=self.context_emb_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
+            batch_first=True,
         )
         right_context_lstm = nn.LSTM(
             input_size=self.context_emb_size,
             hidden_size=hidden_size,
             num_layers=num_layers,
+            batch_first=True
         )
         return left_context_lstm, right_context_lstm
 
@@ -120,25 +123,25 @@ class Context2Vec(nn.Module):
         return negative_embeddings
 
     def get_context_vector(self, input_tensor: torch.Tensor) -> torch.Tensor:
-        left_context_ids = input_tensor[:-1, :]
-        right_context_ids = input_tensor.flip(0)[:-1, :]
+        left_context_ids = input_tensor[:, :-1]
+        right_context_ids = input_tensor.flip(1)[:, :-1]
 
         left_context_embs = self.left_context_embs(left_context_ids)
         right_context_embs = self.right_context_embs(right_context_ids)
 
         left_hidden_states, _ = self.left_context_lstm(left_context_embs)
-        left_hidden_states = left_hidden_states[:-1, :]
+        left_hidden_states = left_hidden_states[:, :-1, :]
 
         right_hidden_states, _ = self.right_context_lstm(right_context_embs)
-        right_hidden_states = right_hidden_states[:-1, :].flip(0)
+        right_hidden_states = right_hidden_states[:, :-1, :].flip(1)
 
-        bi_dir_hidden_state = torch.cat((left_hidden_states, right_hidden_states), dim=-1)
+        bi_dir_hidden_state = torch.cat((left_hidden_states, right_hidden_states), dim=2)
         context_tensor = self.mlp(bi_dir_hidden_state)
         return context_tensor
 
     def get_closest_words_to_context(self, context_ids: torch.Tensor, target_pos: int, k: int = 10):
         context_ids = context_ids.t()
-        context_vector = self.get_context_vector(context_ids)[target_pos, 0, :]
+        context_vector = self.get_context_vector(context_ids)[0, target_pos, :]
         logits = (self.target_embs.weight.data * context_vector).sum(-1)
         probs = F.softmax(logits, dim=0)
         top_vals, top_ids = probs.topk(k=k)
@@ -148,7 +151,7 @@ class Context2Vec(nn.Module):
 
     @overrides
     def forward(self, input_tensor: torch.Tensor):
-        target_embs = self.target_embs(input_tensor[1:-1, :])
+        target_embs = self.target_embs(input_tensor[:, 1:-1])
         context_tensor = self.get_context_vector(input_tensor)
         negative_shape = torch.Size((target_embs.size(0), target_embs.size(1), self.num_negative_samples))
         negative_samples = self.sample(shape=negative_shape)

@@ -44,9 +44,10 @@ class Dataset:
             pad_token=self.pad_token,
             init_token=self.bos_token,
             eos_token=self.eos_token,
+            batch_first=True,
             include_lengths=False
         )
-        self.sentence_id_field = data.Field(use_vocab=False)
+        self.sentence_id_field = data.Field(use_vocab=False, batch_first=True)
 
         # Create vocabulary or use given vocab
         if vocab is None:
@@ -113,7 +114,7 @@ class Dataset:
             sent_indices = np.array(sent_indices)
             items = [*zip(sentences[sent_indices], sent_indices[:, np.newaxis])]
             datasets[sent_length] = data.Dataset(self.get_examples(items, fields), fields)
-        np.random.seed(100500)
+        np.random.seed(777)
         return np.random.permutation(list(datasets.values()))
 
     @staticmethod
