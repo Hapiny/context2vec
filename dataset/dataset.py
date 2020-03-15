@@ -53,8 +53,7 @@ class Dataset:
             self.sentence_field.build_vocab(
                 sentences,
                 max_size=vocab_size,
-                min_freq=min_freq,
-                specials=SPECIAL_TOKENS
+                min_freq=min_freq
             )
         else:
             self.sentence_field.vocab = vocab

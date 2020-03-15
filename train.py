@@ -39,7 +39,8 @@ with open(train_dataset_path, "r") as fp:
     sentences = []
     for line in fp:
         tokens = line.lower().strip().split()
-        if len(tokens) > 64:
+        num_tokens = len(tokens)
+        if num_tokens > 64 or num_tokens < 2:
             continue
         sentences.append(tokens)
     sentences = np.array(sentences)
