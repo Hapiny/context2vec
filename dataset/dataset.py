@@ -125,7 +125,8 @@ class Dataset:
         if batch_size is None:
             batch_size = self.batch_size
 
-        for dataset in tqdm(self.dataset):
+        progress_bar = tqdm(self.dataset, desc=f"Training...")
+        for dataset in progress_bar:
             dataset_iterator = data.Iterator(
                 dataset=dataset,
                 batch_size=batch_size,
@@ -133,5 +134,5 @@ class Dataset:
                 repeat=False,
                 device=self.device,
             )
-            for batch in dataset_iterator:
+            for batch in tqdm(dataset_iterator):
                 yield batch

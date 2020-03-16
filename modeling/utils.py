@@ -7,7 +7,7 @@ from overrides import overrides
 
 
 class Sampler(nn.Module):
-    def __init__(self, word_freqs: List[int], alpha: float = 0.75):
+    def __init__(self, word_freqs: np.ndarray, alpha: float = 0.75):
         super(Sampler, self).__init__()
         self.word_freqs = word_freqs
         self.alpha = alpha
