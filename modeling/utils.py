@@ -35,7 +35,7 @@ class Sampler(nn.Module):
             values[il * 2] = idx
             il += 1
 
-        threshold = torch.from_numpy(threshold).type(torch.long)
+        threshold = torch.from_numpy(threshold).type(torch.float)
         values = torch.from_numpy(values).type(torch.long)
         return threshold, values
 

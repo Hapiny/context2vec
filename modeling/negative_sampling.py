@@ -32,5 +32,5 @@ class NegativeSampling(nn.Module):
         positive_samples_loss = self.activate_func(positive_logits)
         logits = (-negative_samples * context_tensor.unsqueeze(2)).sum(-1)
         negative_samples_loss = self.activate_func(logits).sum(-1)
-        loss = -(positive_samples_loss + negative_samples_loss).sum(0)
-        return loss.mean()
+        loss = -(positive_samples_loss + negative_samples_loss).sum()
+        return loss

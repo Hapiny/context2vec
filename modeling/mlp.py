@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import List, Union
 
 
@@ -14,7 +15,6 @@ class MLP(nn.Module):
             output_size: int,
             num_layers: int = 2,
             dropout_rate: float = 0.0,
-            activate_func: str = "relu"
     ):
         """
         Class that implements Multi-Layer Perceptron module.
@@ -30,12 +30,10 @@ class MLP(nn.Module):
                 It must be value greater than zero. If num_layers equal to 1,
                 then MLP consists only input and output layers.
             dropout_rate: Probability that values of the Tensor could be zeroed.
-            activate_func: Activation function for MLP layers.
         """
         super(MLP, self).__init__()
         assert num_layers >= 1, f"Invalid number of layers: {num_layers}"
         assert 0.0 <= dropout_rate <= 1.0, f"Invalid Dropout prob: {dropout_rate}"
-        assert activate_func in ["relu", "tanh"], f"Invalid activation function name: {activate_func}"
 
         self.input_size = input_size
         self.hidden_sizes = hidden_size if isinstance(hidden_size, list) else [hidden_size] * (num_layers - 1)
@@ -43,7 +41,6 @@ class MLP(nn.Module):
         self.num_layers = num_layers
         self.dropout = nn.Dropout(dropout_rate)
         self.mlp = self.create_mlp()
-        self.activate_func = (nn.ReLU() if activate_func == "relu" else nn.Tanh())
 
     def create_mlp(self) -> nn.ModuleList:
         """
@@ -74,6 +71,6 @@ class MLP(nn.Module):
         output = inputs
         for i in range(self.num_layers - 1):
             output = self.mlp[i](self.dropout(output))
-            output = self.activate_func(output)
+            output = F.relu(output)
         output = self.mlp[-1](self.dropout(output))
         return output
